@@ -1,0 +1,4 @@
+{% extends "base.html" %}{% block title %}System status · LegaVault{% endblock %}
+{% block body %}<section class="page-hero"><div><p class="eyebrow">PLATFORM CONFIGURATION</p><h1>System health</h1><p class="muted">Module readiness and security posture for this LegaVault instance.</p></div><span class="hero-badge">Local workspace</span></section>
+<div class="table-wrap"><table class="status-table">{% for k, v in items %}<tr><th>{{ k }}</th><td>{{ v }}</td></tr>{% endfor %}</table></div>
+<p class="security-caption">This is a local application. For use beyond localhost, deploy behind HTTPS, set a strong SECRET_KEY, secure the encryption key, and configure a production server.</p>{% endblock %}

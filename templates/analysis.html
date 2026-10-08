@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block title %}Analysis · LegaVault{% endblock %}
+{% block body %}<p><a href="/vault">← Back to vault</a></p><section class="page-hero analysis-hero"><div><p class="eyebrow">DOCUMENT INTELLIGENCE</p><h1>{{ d.filename }}</h1><p class="muted">{{ a.method }} · Detected type: {{ a.facts.type }}</p></div><span class="hero-badge">Encrypted analysis</span></section>
+<div class="analysis-grid"><article class="case"><p class="eyebrow">OVERVIEW</p><h2>Document summary</h2><p>{{ a.summary or 'No readable text was found in this file.' }}</p></article>
+<article class="case"><p class="eyebrow">EXTRACTED DETAILS</p><h2>Key details</h2>
+<p><b>Amounts:</b> {{ a.facts.amounts|join(', ') or 'none found' }}</p>
+<p><b>Dates:</b> {{ a.facts.dates|join(', ') or 'none found' }}</p>
+<p><b>Sections cited:</b> {{ a.facts.sections|join(', ') or 'none found' }}</p></article></div>
+<article class="case"><p class="eyebrow">RESEARCH CONNECTIONS</p><h2>Related statutes and precedents</h2>
+{% for r in a.related %}<div class="source-row"><span class="tag">{{ r.type }}</span><b>{{ r.title }}</b> <span class="muted">{{ r.citation }}</span><p>{{ r.text }}</p></div>
+{% else %}<p class="muted">No close matches in the current knowledge base.</p>{% endfor %}</article>
+<details class="case"><summary>Review extracted text</summary><pre class="brief">{{ a.text }}</pre></details>
+<p><a class="btn" href="/vault/download/{{ d.id }}">Request original file</a></p><p class="security-caption">OCR and summaries can miss or misread legal details. Verify against the original document before relying on them.</p>{% endblock %}

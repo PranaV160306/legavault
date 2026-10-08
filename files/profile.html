@@ -1,0 +1,5 @@
+{% extends "base.html" %}{% block title %}Profile · LegaVault{% endblock %}
+{% block body %}<section class="auth"><h1>Your profile</h1>
+<p class="muted">{{ me.name }}, {{ me.email }}</p><p class="muted">Sign in with your email and password.</p>
+<form method="post"><label>Mobile number<input name="phone" type="tel" value="{{ me.phone or '' }}" placeholder="98765 43210"></label>
+<label>Current password (to confirm changes)<input type="password" name="password" required></label><button>Save profile</button></form>

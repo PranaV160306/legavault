@@ -1,0 +1,12 @@
+-r requirements.txt
+transformers
+torch
+sentence-transformers
+langchain-core
+langchain-community
+langchain-huggingface
+faiss-cpu
+shap
+lime
+langchain-pinecone
+google-cloud-vision

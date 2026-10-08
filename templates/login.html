@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block title %}Log in · LegaVault{% endblock %}
+{% block body %}<section class="auth"><div class="auth-mark">LV</div><p class="eyebrow">PRIVATE LEGAL WORKSPACE</p><h1>Welcome back</h1><p class="muted">Securely continue your casework, research and document review.</p>
+<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label>Email<input type="email" name="email" required autofocus></label>
+<label>Password<input type="password" name="password" required></label>
+<button class="primary-button">Continue securely</button></form>
+<p class="auth-foot">New to LegaVault? <a href="/signup">Create an account</a></p><p class="secure-note">Email and password sign-in</p></section>{% endblock %}

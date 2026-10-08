@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% block title %}Dashboard · LegaVault{% endblock %}
+{% block body %}<section class="page-hero"><div><p class="eyebrow">YOUR LEGAL WORKSPACE</p><h1>Good to see you, {{ session.name.split(' ')[0] }}</h1><p class="muted">Keep your documents, research and case activity moving in one secure place.</p></div><span class="hero-badge"><i></i> Workspace active</span></section>
+{% include "_tiles.html" %}<div class="grid">
+<section id="assistant" class="panel"><div class="section-heading"><div><p class="eyebrow">RESEARCH ASSISTANT</p><h2>Ask a legal question</h2></div><span class="soft-tag">AI + legal sources</span></div>
+<div id="log" class="log">{% for c in chats|reverse %}<div class="q">{{ c.q }}</div><div class="a">{{ c.a }}</div>{% endfor %}
+{% if not chats %}<p class="muted">Ask about rent, cheque bounce, FIRs, consumer complaints, bail or divorce.</p>{% endif %}</div>
+{% if ai_enabled %}<p class="security-caption">AI responses use Google Gemini. Questions and retrieved source excerpts are sent to Google; avoid including identifying sensitive details.</p>{% else %}<p class="security-caption">AI is not configured. Responses use the local demo assistant and bundled research library.</p>{% endif %}
+<div class="ask"><textarea id="q" rows="2" placeholder="Describe your situation"></textarea><button id="send">Ask</button></div></section>
+<section class="panel"><p class="eyebrow">CASEWORK</p><h2>Submit a case</h2>
+<form method="post" action="/cases/new"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label>Title<input name="title" required></label>
+<label>Details<textarea name="description" rows="4" required></textarea></label><button>Submit case</button></form>
+<h2>Your cases</h2>
+{% for c in cases %}<article class="case"><b>#{{ c.id }} {{ c.title }}</b><span class="tag {{ c.status|lower }}">{{ c.status }}</span>
+{% if c.ruling %}<p><i>Judge's ruling:</i> {{ c.ruling }}</p>{% endif %}</article>
+{% else %}<p class="muted">No cases yet. Submit one above to get a judge's ruling.</p>{% endfor %}</section></div>
+<script>
+const log=document.getElementById('log'),q=document.getElementById('q'),csrf=document.querySelector('meta[name="csrf-token"]').content;
+function add(c,t){const d=document.createElement('div');d.className=c;d.textContent=t;log.appendChild(d);log.scrollTop=log.scrollHeight;return d}
+document.getElementById('send').onclick=async()=>{const t=q.value.trim();if(!t)return;add('q',t);q.value='';const w=add('a','Preparing a response…');
+try{const r=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({q:t})});const data=await r.json();if(!r.ok)throw new Error(data.error||'Request failed. Reload and try again.');w.textContent=data.a}catch(e){w.textContent=e.message}};
+log.scrollTop=log.scrollHeight;</script>{% endblock %}

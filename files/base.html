@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}LegaVault{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head><body>
+<header class="bar"><a class="brand" href="/">Lega<span>Vault</span></a>
+{% if session.uid %}<nav>{% if session.role == "judge" %}<a href="/judge">Judge panel</a>{% endif %}<a href="/dashboard">Assistant</a><a href="/vault">Vault</a><a href="/search">Search</a><a href="/predict">Predict</a><a href="/audit">Audit log</a><a href="/status">Status</a><a href="/profile">Profile</a><span class="who">{{ session.name }} ({{ session.role }})</span><a href="/logout">Log out</a></nav>{% endif %}</header>
+<main>{% for m in get_flashed_messages() %}<p class="flash">{{ m }}</p>{% endfor %}{% block body %}{% endblock %}</main>
+<footer>General legal information only. Not a substitute for a licensed advocate.</footer>
+</body></html>

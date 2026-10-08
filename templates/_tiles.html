@@ -1,0 +1,9 @@
+<div class="tiles">
+{% if session.role == "judge" %}<a class="tile" href="/judge"><b>Review cases</b><span>{% if pending is defined %}{{ pending }} awaiting a ruling{% else %}Open case briefs and rulings{% endif %}</span></a>{% endif %}
+<a class="tile" href="/vault"><b>Document vault</b><span>Encrypt, analyse and share case documents</span></a>
+<a class="tile" href="/dashboard#assistant"><b>Legal assistant</b><span>Ask a question or submit a case</span></a>
+<a class="tile" href="/search"><b>Legal research</b><span>Find statutes and precedent summaries</span></a>
+<a class="tile" href="/predict"><b>Case insights</b><span>See model estimates with explanations</span></a>
+<a class="tile" href="/audit"><b>Activity log</b><span>Review document and account actions</span></a>
+<a class="tile" href="/status"><b>System health</b><span>Check active modules and setup</span></a>
+</div>

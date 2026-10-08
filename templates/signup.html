@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% block title %}Sign up · LegaVault{% endblock %}
+{% block body %}<section class="auth"><div class="auth-mark">LV</div><p class="eyebrow">GET STARTED</p><h1>Create your workspace</h1><p class="muted">Your role controls how you can access and share legal documents.</p>
+<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label>Full name<input name="name" required></label>
+<label>Email<input type="email" name="email" required></label>
+<label>Password (8+ characters)<input type="password" name="password" minlength="8" required></label>
+<label>Account role<select name="role" id="role"><option value="client">Client</option><option value="lawyer">Lawyer</option><option value="associate">Associate</option>{% if judge_enabled %}<option value="judge">Judge</option>{% endif %}</select></label>
+{% if judge_enabled %}<label id="codebox" hidden>Judge invite code<input name="code"></label>{% else %}<p class="security-caption">Judge accounts require an administrator invite.</p>{% endif %}
+<button class="primary-button">Create account</button></form>
+<p class="auth-foot">Already registered? <a href="/login">Log in</a></p></section>
+{% if judge_enabled %}<script>const r=document.getElementById('role'),b=document.getElementById('codebox');r.onchange=()=>b.hidden=r.value!=='judge';</script>{% endif %}{% endblock %}

@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block title %}Legal search · LegaVault{% endblock %}
+{% block body %}<section class="page-hero"><div><p class="eyebrow">LEGAL RESEARCH</p><h1>Search statutes and precedents</h1><p class="muted">Describe a legal issue to find the closest sources in the local LegaVault library.</p></div><span class="hero-badge">{{ mode }}</span></section>
+<form method="post" class="ask"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input name="q" value="{{ q }}" placeholder="Describe the issue, e.g. landlord refusing to return deposit" required autofocus><button>Search</button></form>
+<p class="security-caption">Retrieval mode: {{ mode }}. This starter library is a research aid; check current official legal texts before relying on a result.</p>
+{% for r in res %}<article class="case source-card"><span class="tag">{{ r.type }}</span><p class="eyebrow">SOURCE MATCH · {{ r.score }}</p><h3>{{ r.title }}</h3><p class="muted">{{ r.citation }}</p><p>{{ r.text }}</p></article>
+{% else %}{% if q %}<div class="empty-state"><h3>No close matches</h3><p class="muted">Try different terms, a statute number or a shorter description.</p></div>{% endif %}{% endfor %}{% endblock %}

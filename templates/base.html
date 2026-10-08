@@ -1,0 +1,10 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<title>{% block title %}LegaVault{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head><body>
+<header class="bar"><a class="brand" href="/">Lega<span>Vault</span></a>
+{% if session.uid %}<nav>{% if session.role == "judge" %}<a href="/judge" class="{{ 'active' if request.path.startswith('/judge') }}">Judge panel</a>{% endif %}<a href="/dashboard" class="{{ 'active' if request.path == '/dashboard' }}">Overview</a><a href="/vault" class="{{ 'active' if request.path.startswith('/vault') }}">Documents</a><a href="/search" class="{{ 'active' if request.path == '/search' }}">Legal research</a><a href="/predict" class="{{ 'active' if request.path == '/predict' }}">Case insights</a><a href="/audit" class="{{ 'active' if request.path == '/audit' }}">Activity</a><a href="/status" class="{{ 'active' if request.path == '/status' }}">System</a><span class="who"><span class="avatar">{{ session.name[:1]|upper }}</span>{{ session.name }} <small>{{ session.role }}</small></span><form method="post" action="/logout" class="logout-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="nav-logout">Log out</button></form></nav>{% endif %}</header>
+<main>{% for m in get_flashed_messages() %}<p class="flash">{{ m }}</p>{% endfor %}{% block body %}{% endblock %}</main>
+<footer><span>General legal information only.</span><span>Secure workspace · LegaVault</span></footer>
+</body></html>

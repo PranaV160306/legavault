@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block title %}Judge panel · LegaVault{% endblock %}
+{% block body %}<section class="page-hero"><div><p class="eyebrow">JUDICIAL REVIEW</p><h1>Judge panel</h1><p class="muted">Review case submissions and record decisions with an auditable history.</p></div><span class="hero-badge">{{ pending }} pending</span></section>{% include "_tiles.html" %}<h2>Case submissions</h2>
+{% for c in cases %}<article class="case"><b>#{{ c.id }} {{ c.title }}</b> <span class="muted">by {{ c.client }}</span>
+<span class="tag {{ c.status|lower }}">{{ c.status }}</span><p>{{ c.description }}</p>
+<button type="button" class="ghost" onclick="brief({{ c.id }},this)">AI case brief</button><div class="brief" id="b{{ c.id }}"></div>
+<form method="post" action="/judge/{{ c.id }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><select name="status">{% for s in ['Pending','Under Review','Resolved','Dismissed'] %}<option {{ 'selected' if s==c.status }}>{{ s }}</option>{% endfor %}</select>
+<textarea name="ruling" rows="2" placeholder="Ruling or remarks" required>{{ c.ruling or '' }}</textarea><button>Save ruling</button></form></article>
+{% else %}<p class="muted">No cases have been submitted yet.</p>{% endfor %}
+<script>async function brief(id,b){b.textContent='Working…';try{const r=await fetch('/judge/'+id+'/ai',{method:'POST',headers:{'X-CSRF-Token':document.querySelector('meta[name="csrf-token"]').content}});const d=await r.json();document.getElementById('b'+id).textContent=d.a||d.error||'Could not prepare a brief.'}catch(e){document.getElementById('b'+id).textContent='Could not prepare a brief.'}b.textContent='AI case brief'}</script>{% endblock %}

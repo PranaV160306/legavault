@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% block title %}Outcome prediction · LegaVault{% endblock %}
+{% block body %}<section class="page-hero"><div><p class="eyebrow">EXPLAINABLE ML</p><h1>Case outcome insights</h1><p class="muted">Explore how case facts affect a model estimate and see related precedents.</p></div><span class="hero-badge">Random Forest · SHAP / LIME</span></section>
+{% if 'synthetic' in model_kind %}<div class="flash model-note"><b>Prototype model:</b> This Random Forest is trained on synthetic examples ({{ acc }}% holdout accuracy on synthetic data). Its estimate is not validated for real cases. Train on suitable labelled outcomes before using as an evaluation tool.</div>{% else %}<div class="flash model-note"><b>Trained model:</b> {{ acc }}% stratified holdout accuracy on the supplied labelled data. This estimate is not legal advice and still requires independent validation.</div>{% endif %}
+<div class="grid"><form class="panel" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><p class="eyebrow">CASE FACTS</p><h2>Build a case profile</h2><label>Case type<select name="case_type">{% for t in types %}<option value="{{ t }}">{{ t.replace('_',' ') }}</option>{% endfor %}</select></label>
+<label>Evidence strength<select name="evidence">{% for i in range(1,6) %}<option value="{{ i }}" {{ 'selected' if i==3 }}>{{ i }} of 5</option>{% endfor %}</select></label>
+<label>Months between the dispute and filing<input type="number" name="delay" min="0" max="60" value="0"></label>
+<label>Claim size in lakh rupees<input type="number" name="claim" min="0" max="100" step="0.1" value="5"></label>
+<label><input type="checkbox" name="docs" style="width:auto"> Documents are complete</label>
+<label><input type="checkbox" name="notice" style="width:auto"> Legal notice already sent</label>
+<label>Explanation method<select name="how"><option value="shap">SHAP</option><option value="lime">LIME</option></select></label>
+<label>Facts of the case (used to find supporting precedents)<textarea name="facts" rows="4"></textarea></label><button>Estimate outcome</button></form>
+<section>{% if out %}<article class="case prediction-result"><p class="eyebrow">MODEL ESTIMATE · NOT A LEGAL OPINION</p><h2>{{ out.label }}: {{ out.prob }}%</h2>
+{% for f in out.factors %}<p>{{ f.text }}</p><div class="meter"><i class="{{ 'neg' if f.pts < 0 }}" style="width:{{ [f.pts|abs * 3, 100]|min }}%"></i></div>{% endfor %}
+<p class="muted">Explained with {{ out.method }}.</p></article>
+{% if out.precedents %}<article class="case"><h3>Closest precedents</h3>{% for r in out.precedents %}<p><b>{{ r.title }}</b> <span class="muted">{{ r.citation }}</span><br>{{ r.text }}</p>{% endfor %}</article>{% endif %}
+{% if out.bert and out.bert.prob is defined %}<article class="case"><h3>BERT view of the facts: {{ out.bert.prob }}% favourable</h3>
+<p>Words that moved it most (LIME): {% for w, s in out.bert.words %}{{ w }} ({{ '%+d'|format(s) }}){{ ', ' if not loop.last }}{% endfor %}</p></article>
+{% elif out.bert and out.bert.error %}<p class="muted">BERT model could not run: {{ out.bert.error }}</p>{% endif %}
+{% else %}<p class="muted">Fill in the details and press Estimate outcome. Each factor's effect on the result is shown in plain language.</p>{% endif %}</section></div>{% endblock %}
