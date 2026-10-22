@@ -18,6 +18,20 @@ from jinja2 import DictLoader
 from flask import Flask, g, render_template, request, redirect, session, url_for, flash, jsonify, send_file
 from werkzeug.security import generate_password_hash, check_password_hash
 
+def load_local_env():
+    """Load optional project settings from .env without overriding shell values."""
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.isfile(env_path):
+        return
+    with open(env_path, encoding="utf-8") as env_file:
+        for line in env_file:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+load_local_env()
+
 # =====================================================================================
 # 1. OCR + NLP  (Tesseract or Google Vision; Transformer or extractive summary; fact extraction)
 # =====================================================================================

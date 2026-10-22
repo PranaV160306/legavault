@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, Lock, LogOut, User, CheckCircle2 } from 'lucide-react';
+import { Shield, Lock, LogOut, User } from 'lucide-react';
 
 export default function Navbar({ user, onLogout }) {
   const getRoleClass = (role) => {

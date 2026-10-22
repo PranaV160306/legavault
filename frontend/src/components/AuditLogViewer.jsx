@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { History, ShieldAlert, CheckCircle2, XCircle, Search, RefreshCw, Filter, FileText } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { History, ShieldAlert, CheckCircle2, XCircle, RefreshCw, Filter } from 'lucide-react';
 import { api } from '../api';
 
 export default function AuditLogViewer({ user, showToast }) {
@@ -10,13 +10,7 @@ export default function AuditLogViewer({ user, showToast }) {
 
   const isLawyer = user?.role === 'lawyer';
 
-  useEffect(() => {
-    if (isLawyer) {
-      fetchLogs();
-    }
-  }, [isLawyer, actionFilter]);
-
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -28,7 +22,11 @@ export default function AuditLogViewer({ user, showToast }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [actionFilter, showToast]);
+
+  useEffect(() => {
+    if (isLawyer) fetchLogs();
+  }, [isLawyer, fetchLogs]);
 
   if (!isLawyer) {
     return (

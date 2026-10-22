@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Lock, Key, Mail, UserCheck, AlertCircle, RefreshCw, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Shield, Lock, Key, UserCheck, AlertCircle, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { api } from '../api';
 
 export default function AuthView({ onAuthSuccess, showToast }) {
@@ -51,7 +51,7 @@ export default function AuthView({ onAuthSuccess, showToast }) {
     setLoading(true);
 
     try {
-      const res = await api.login(email, password);
+      await api.login(email, password);
       showToast('Credentials verified. Please enter the 6-digit OTP.', 'info');
       setView('otp');
       setResendCooldown(60);
@@ -108,7 +108,7 @@ export default function AuthView({ onAuthSuccess, showToast }) {
     try {
       await api.resendOtp(email);
       setResendCooldown(60);
-      showToast('A fresh OTP has been dispatched to backend console.', 'info');
+      showToast(otpMode === 'DEVELOPMENT' ? 'A fresh OTP was written to the backend console.' : 'A fresh OTP was sent to your email.', 'info');
     } catch (err) {
       setError(err.message || 'Could not resend OTP');
       showToast(err.message, 'danger');
@@ -137,7 +137,7 @@ export default function AuthView({ onAuthSuccess, showToast }) {
           </h2>
           <p style={{ fontSize: '0.875rem', color: '#64748b', marginTop: '0.25rem' }}>
             {view === 'otp'
-              ? 'Enter the 6-digit time-based OTP to verify your identity.'
+              ? 'Enter the 6-digit email verification code to verify your identity.'
               : view === 'login'
               ? 'Confidential role-based document workspace.'
               : 'Register as Lawyer, Associate, or Client.'}
@@ -329,17 +329,21 @@ export default function AuthView({ onAuthSuccess, showToast }) {
         {/* VIEW 3: OTP VERIFICATION */}
         {view === 'otp' && (
           <form onSubmit={handleOtpSubmit}>
-            {otpMode === 'DEVELOPMENT' && (
+            {otpMode === 'DEVELOPMENT' ? (
               <div className="alert alert-info" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.35rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
                   <Key size={16} />
                   <span>Development OTP Mode Active</span>
                 </div>
                 <p style={{ fontSize: '0.8rem', opacity: 0.9 }}>
-                  Check the <strong>backend development console/terminal</strong> for the 6-digit OTP for <strong>{email}</strong>. The code is not shown in this app.
+                  Check the <strong>backend development terminal</strong> for the 6-digit OTP for <strong>{email}</strong>. Development mode does not send email.
                 </p>
               </div>
-            )}
+            ) : otpMode === 'EMAIL' ? (
+              <div className="alert alert-info">
+                Check the inbox for <strong>{email}</strong> for your 6-digit verification code. Check spam/junk if it does not arrive.
+              </div>
+            ) : null}
 
             <div className="form-group">
               <label className="form-label" style={{ textAlign: 'center', display: 'block' }}>Enter 6-Digit OTP Code</label>

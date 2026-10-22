@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Shield, Upload, FileText, Lock, X, RefreshCw } from 'lucide-react';
+import { Shield, Upload, Lock, X, RefreshCw } from 'lucide-react';
 import { api } from '../api';
 
 export default function UploadModal({ isOpen, onClose, onUploadSuccess, showToast }) {

@@ -45,8 +45,18 @@ class Settings:
     OTP_EXPIRE_MINUTES: int = int(os.getenv("OTP_EXPIRE_MINUTES", "5"))
     OTP_COOLDOWN_SECONDS: int = int(os.getenv("OTP_COOLDOWN_SECONDS", "60"))
     OTP_DEV_MODE: bool = os.getenv("OTP_DEV_MODE", "True").lower() in ("true", "1", "yes")
+    # SMTP delivery is used whenever development-console delivery is disabled.
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USERNAME: str = os.getenv("SMTP_USERNAME", "")
+    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+    SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", "")
+    SMTP_USE_SSL: bool = os.getenv("SMTP_USE_SSL", "False").lower() in ("true", "1", "yes")
 
 settings = Settings()
+
+if not settings.OTP_DEV_MODE and not all((settings.SMTP_HOST, settings.SMTP_USERNAME, settings.SMTP_PASSWORD, settings.SMTP_FROM_EMAIL)):
+    raise RuntimeError("Production OTP email requires SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, and SMTP_FROM_EMAIL.")
 
 if len(settings.SECRET_KEY) < 32:
     raise RuntimeError("SECRET_KEY must be set to at least 32 characters in the project .env or process environment.")

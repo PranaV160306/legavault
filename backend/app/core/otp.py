@@ -1,5 +1,8 @@
 import secrets
 import hmac
+import smtplib
+import ssl
+from email.message import EmailMessage
 from datetime import datetime, timedelta, timezone
 from typing import Tuple, Optional
 from sqlalchemy.orm import Session
@@ -31,10 +34,38 @@ def log_dev_otp(email: str, otp_code: str, expires_at: datetime):
         print(" NOTE      : In production, this OTP is delivered via secure SMS/Email.")
         print(f"{border}\n", flush=True)
 
+def deliver_otp(email: str, otp_code: str, expires_at: datetime) -> None:
+    """Deliver through the development console or configured SMTP account."""
+    if settings.OTP_DEV_MODE:
+        log_dev_otp(email, otp_code, expires_at)
+        return
+
+    message = EmailMessage()
+    message["Subject"] = "Your LegaVault sign-in verification code"
+    message["From"] = settings.SMTP_FROM_EMAIL
+    message["To"] = email
+    message.set_content(
+        f"Your LegaVault verification code is {otp_code}.\n\n"
+        f"It expires at {expires_at.strftime('%Y-%m-%d %H:%M:%S UTC')}. "
+        "If you did not request this code, you can ignore this email."
+    )
+    context = ssl.create_default_context()
+    if settings.SMTP_USE_SSL:
+        with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, context=context, timeout=15) as server:
+            server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+            server.send_message(message)
+    else:
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as server:
+            server.ehlo()
+            server.starttls(context=context)
+            server.ehlo()
+            server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+            server.send_message(message)
+
 def create_and_store_otp(db: Session, user: User) -> Tuple[bool, str, Optional[int]]:
     """
     Checks cooldown, creates a fresh 6-digit OTP, stores its keyed HMAC-SHA-256 hash in SQLite,
-    and logs the code to dev console.
+    and delivers it through the configured channel.
     Returns (success, message, remaining_cooldown_seconds_if_failed).
     """
     now = datetime.now(timezone.utc)
@@ -77,8 +108,13 @@ def create_and_store_otp(db: Session, user: User) -> Tuple[bool, str, Optional[i
     db.add(record)
     db.commit()
 
-    # Output to dev console
-    log_dev_otp(user.email, otp_code, expires_at)
+    # Do not leave an unusable active code behind if delivery fails.
+    try:
+        deliver_otp(user.email, otp_code, expires_at)
+    except (OSError, smtplib.SMTPException) as exc:
+        record.is_used = True
+        db.commit()
+        raise RuntimeError("Could not deliver the OTP email. Check SMTP settings and try again.") from exc
     return True, "OTP generated and sent successfully.", None
 
 def verify_user_otp(db: Session, user: User, candidate_otp: str) -> Tuple[bool, str]:

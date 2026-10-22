@@ -76,7 +76,7 @@ The architecture separates concerns cleanly into modular components designed for
    - 6-digit cryptographically random OTP generated via `secrets.randbelow`.
    - Expires in 5 minutes; single-use invalidation; 60-second cooldown rate limit.
    - Stored in SQLite as a keyed HMAC-SHA-256 hash (never plain text; a database-only leak is not enough to brute force the six-digit code offline).
-   - Dedicated **DEVELOPMENT MODE** prints OTP to the backend console for local testing without requiring paid SMS/Email gateways.
+   - Local development can print OTP to the backend console. Production mode sends codes to the user's registered email through authenticated SMTP with STARTTLS (or SMTP SSL).
 4. **Confidential Sharing & Immediate Revocation:**
    - Document owners (Lawyers) can share documents with registered Associates or Clients.
    - Access can be revoked instantly.
@@ -197,6 +197,42 @@ OTP_COOLDOWN_SECONDS=60
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
 Generate secrets with `python -c "import secrets; print(secrets.token_hex(32))"`. `AES_SECRET_KEY` must be exactly 64 hex characters. The backend fails to start if either cryptographic secret is missing or malformed. Keep `.env` private; `.env.example` contains placeholders only. Lawyer signup requires the setup code from `LAWYER_REGISTRATION_CODE`; ordinary users cannot assign themselves lawyer privileges.
+
+The standalone Flask app (`python app.py` or `bash start.sh`) also supports Gemini-powered legal Q&A. Add your key to the project `.env` file as `GEMINI_API_KEY=your_key`, optionally set `GEMINI_MODEL=gemini-3.5-flash`, then restart the Flask app. The key is read server-side and `.env` is ignored by Git. The FastAPI/React Objective 1 interface does not currently call Gemini.
+
+### 2FA OTP delivery
+
+OTP verification is part of sign-in: enter the account email and password, then enter the code delivered to that email. Codes expire after `OTP_EXPIRE_MINUTES`, can be used once, and resend requests are limited by `OTP_COOLDOWN_SECONDS`. The database stores only a keyed OTP hash.
+
+For local development, keep `OTP_DEV_MODE=True`; the 6-digit code appears only in the terminal running the FastAPI backend. For actual email delivery, set `OTP_DEV_MODE=False` and configure SMTP in the project-root `.env` file:
+
+```ini
+OTP_DEV_MODE=False
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your-sender@gmail.com
+SMTP_PASSWORD=your-provider-app-password
+SMTP_FROM_EMAIL=your-sender@gmail.com
+SMTP_USE_SSL=False
+```
+
+Use SMTP credentials or an app password from your mail provider, not your normal email account password. Port 587 uses STARTTLS. For an SSL-only SMTP service (commonly port 465), set its host and port and use `SMTP_USE_SSL=True`. Restart the backend after changing `.env`. The backend reports `otp_mode: EMAIL` at `/api/health`; `DEVELOPMENT` means it is writing codes to the backend terminal. If email delivery fails, login returns an error and the undelivered code is invalidated; check the SMTP host, port, credential, sender authorization, and server connectivity.
+
+To try the full flow locally:
+
+1. Copy `.env.example` to `.env`, generate `SECRET_KEY` and `AES_SECRET_KEY` with `python -c "import secrets; print(secrets.token_hex(32))"`, and set `LAWYER_REGISTRATION_CODE` to a private random value.
+2. Install backend dependencies and seed accounts using the installation steps below. Keep `OTP_DEV_MODE=True` if you do not have an SMTP account configured.
+3. Start the backend from the project root with `bash run_backend.sh` and the React app in another terminal with `bash run_frontend.sh`.
+4. Open `http://localhost:5173`, sign in using one of the seeded account credentials, then copy the OTP from the backend terminal (development) or email inbox (SMTP mode) into the verification screen.
+5. To verify delivery via email, configure the SMTP values above, set `OTP_DEV_MODE=False`, restart the backend, and repeat sign-in. `http://localhost:8000/api/health` should report `EMAIL`.
+
+For macOS/Linux the backend setup commands from the repository root are `python3 -m venv venv`, `source venv/bin/activate`, and `pip install -r backend/requirements.txt`; use `python backend/seed_data.py` once to create the sample users. In another terminal, run `cd frontend && npm install` once, then `npm run dev`. On Windows use the supplied `.bat` launchers and create/activate a virtual environment with the corresponding Windows commands.
+
+For the standalone Flask app, clients and associates can upload files to their own submitted cases, while judges can upload files to cases in the judge panel. The uploader sets and confirms an 8–128 character code for each file; the same code is required to download it. Files are encrypted before storage and incorrect download codes are rate-limited. Share each file's code privately with its intended reviewer.
+
+When sharing a vault document, the owner sets and confirms a new 8–128 character code for that recipient. The same code cannot be reused for another share. The owner gives it to the recipient separately, and the recipient enters it in the vault to unlock download and analysis access for 30 minutes. Only keyed code hashes are stored; re-sharing requires a fresh code, and revoking access removes the grant.
+
+After enabling this manual-code flow, owners should re-share any older active grants so recipients can use a code the owner selected. Case files uploaded before per-file codes were added must be uploaded again to attach an unlock code.
 
 ### 3. Database Initialization & Seeding Test Users
 Run the database seed script to populate default test accounts:

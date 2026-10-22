@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
-  FileText, Download, Share2, Shield, Lock, Users, CheckCircle2,
-  Calendar, HardDrive, RefreshCw, AlertTriangle
+  FileText, Download, Share2, Shield, Lock, Users, RefreshCw
 } from 'lucide-react';
 import { api } from '../api';
 

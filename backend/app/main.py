@@ -43,7 +43,7 @@ def health_check():
         "status": "healthy",
         "service": "LegaVault Objective 1 Security Engine",
         "encryption": "AES-256-GCM",
-        "otp_mode": "DEVELOPMENT" if settings.OTP_DEV_MODE else "PRODUCTION",
+        "otp_mode": "DEVELOPMENT" if settings.OTP_DEV_MODE else "EMAIL",
         "vault_path": str(settings.VAULT_DIR)
     }
 

@@ -19,7 +19,7 @@ class OTPRequest(BaseModel):
 
 class OTPVerify(BaseModel):
     email: EmailStr
-    otp: str = Field(..., min_length=6, max_length=6)
+    otp: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")
 
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)

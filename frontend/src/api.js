@@ -1,6 +1,6 @@
-const API_BASE = (typeof window !== 'undefined' && (window.location.port === '5173' || window.location.port === '3000'))
-  ? 'http://127.0.0.1:8000/api'
-  : '/api';
+// Keep API requests on the current origin. Vite proxies /api in development,
+// and FastAPI serves the same prefix in the unified production deployment.
+const API_BASE = '/api';
 
 export const getAuthToken = () => localStorage.getItem('legavault_token');
 export const setAuthToken = (token) => localStorage.setItem('legavault_token', token);
@@ -10,7 +10,7 @@ export const getStoredUser = () => {
   try {
     const u = localStorage.getItem('legavault_user');
     return u ? JSON.parse(u) : null;
-  } catch (e) {
+  } catch {
     return null;
   }
 };
@@ -33,7 +33,7 @@ async function parseResponseJson(res) {
   }
   try {
     return JSON.parse(text);
-  } catch (e) {
+  } catch {
     if (!res.ok) {
       throw new Error(text || `Request failed with status ${res.status}`);
     }
@@ -119,7 +119,7 @@ export const api = {
   async logout() {
     try {
       await apiFetch('/auth/logout', { method: 'POST' });
-    } catch (e) {
+    } catch {
       // ignore
     } finally {
       removeAuthToken();
@@ -198,7 +198,7 @@ export const api = {
       try {
         const err = await parseResponseJson(res);
         msg = err.detail || msg;
-      } catch (e) {}
+      } catch {}
       throw new Error(msg);
     }
     const blob = await res.blob();

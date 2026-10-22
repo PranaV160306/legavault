@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  FileText, Upload, Shield, Lock, History, Users, Key,
-  CheckCircle2, AlertCircle, Info, RefreshCw, HardDrive
+  Upload, Shield, Lock, History, Users, Key, CheckCircle2, Info
 } from 'lucide-react';
 import DocumentList from './DocumentList';
 import UploadModal from './UploadModal';
@@ -19,12 +18,7 @@ export default function Dashboard({ user, showToast }) {
 
   const isLawyer = user?.role === 'lawyer';
 
-  useEffect(() => {
-    loadDocuments();
-    loadHealth();
-  }, []);
-
-  const loadDocuments = async () => {
+  const loadDocuments = useCallback(async () => {
     setLoading(true);
     try {
       const data = await api.getDocuments();
@@ -34,18 +28,22 @@ export default function Dashboard({ user, showToast }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showToast]);
 
-  const loadHealth = async () => {
+  const loadHealth = useCallback(async () => {
     try {
       const h = await api.getHealth();
       setSystemHealth(h);
-    } catch (e) {
+    } catch {
       // ignore
     }
-  };
+  }, []);
 
-  const myUploads = documents.filter((d) => d.is_owner);
+  useEffect(() => {
+    loadDocuments();
+    loadHealth();
+  }, [loadDocuments, loadHealth]);
+
   const sharedWithMe = documents.filter((d) => !d.is_owner);
 
   return (

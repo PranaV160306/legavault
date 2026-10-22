@@ -1,13 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from './components/Navbar';
 import AuthView from './components/AuthView';
 import Dashboard from './components/Dashboard';
-import { api, getStoredUser, setStoredUser, removeStoredUser, setAuthToken, removeAuthToken } from './api';
+import { api, getStoredUser, setStoredUser, setAuthToken } from './api';
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 
 export default function App() {
   const [user, setUser] = useState(getStoredUser());
   const [toasts, setToasts] = useState([]);
+
+  const showToast = useCallback((message, type = 'info') => {
+    const id = Date.now() + Math.random();
+    setToasts((prev) => [...prev, { id, message, type }]);
+
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  }, []);
 
   useEffect(() => {
     const handleUnauthorized = () => {
@@ -17,16 +26,7 @@ export default function App() {
 
     window.addEventListener('auth:unauthorized', handleUnauthorized);
     return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
-  }, []);
-
-  const showToast = (message, type = 'info') => {
-    const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, message, type }]);
-
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
-  };
+  }, [showToast]);
 
   const removeToast = (id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));

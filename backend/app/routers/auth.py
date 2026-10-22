@@ -111,7 +111,10 @@ def login(login_in: UserLogin, request: Request, db: Session = Depends(get_db)):
         )
 
     # Generate and store OTP
-    success, msg, remaining = create_and_store_otp(db, user)
+    try:
+        success, msg, remaining = create_and_store_otp(db, user)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     if not success:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -130,7 +133,7 @@ def login(login_in: UserLogin, request: Request, db: Session = Depends(get_db)):
     return LoginInitResponse(
         status="otp_required",
         email=user.email,
-        message="Credentials verified. A 6-digit OTP has been dispatched to your console/device."
+        message="Credentials verified. A 6-digit OTP has been sent to your registered email address."
     )
 
 @router.post("/request-otp")
@@ -146,7 +149,10 @@ def resend_otp(otp_req: OTPRequest, request: Request, db: Session = Depends(get_
             detail="No account associated with this email."
         )
 
-    success, msg, remaining = create_and_store_otp(db, user)
+    try:
+        success, msg, remaining = create_and_store_otp(db, user)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     if not success:
         log_audit_event(
             db=db,
@@ -169,7 +175,7 @@ def resend_otp(otp_req: OTPRequest, request: Request, db: Session = Depends(get_
         request=request,
         details="Resent 6-digit OTP code."
     )
-    return {"message": "A new OTP code has been dispatched."}
+    return {"message": "A new OTP code has been sent to your registered email address."}
 
 @router.post("/verify-otp", response_model=TokenResponse)
 def verify_otp(verify_in: OTPVerify, request: Request, db: Session = Depends(get_db)):

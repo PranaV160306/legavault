@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Share2, Users, ShieldAlert, Trash2, X, Check, RefreshCw, UserCheck } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Share2, Users, Trash2, X, RefreshCw } from 'lucide-react';
 import { api } from '../api';
 
 export default function ShareModal({ isOpen, onClose, document, onShareUpdated, showToast }) {
@@ -10,13 +10,7 @@ export default function ShareModal({ isOpen, onClose, document, onShareUpdated, 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (isOpen) {
-      loadUsers();
-    }
-  }, [isOpen]);
-
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     setLoading(true);
     try {
       const data = await api.getUsers();
@@ -26,12 +20,16 @@ export default function ShareModal({ isOpen, onClose, document, onShareUpdated, 
       if (eligible.length > 0) {
         setSelectedUserId(eligible[0].id.toString());
       }
-    } catch (err) {
+    } catch {
       setError('Failed to load registered users');
     } finally {
       setLoading(false);
     }
-  };
+  }, [document?.owner_id]);
+
+  useEffect(() => {
+    if (isOpen) loadUsers();
+  }, [isOpen, loadUsers]);
 
   if (!isOpen || !document) return null;
 

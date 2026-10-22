@@ -11,7 +11,10 @@
 <label>Details<textarea name="description" rows="4" required></textarea></label><button>Submit case</button></form>
 <h2>Your cases</h2>
 {% for c in cases %}<article class="case"><b>#{{ c.id }} {{ c.title }}</b><span class="tag {{ c.status|lower }}">{{ c.status }}</span>
-{% if c.ruling %}<p><i>Judge's ruling:</i> {{ c.ruling }}</p>{% endif %}</article>
+{% if c.ruling %}<p><i>Judge's ruling:</i> {{ c.ruling }}</p>{% endif %}
+<div class="case-files"><b>Case files</b>{% for f in files_by_case[c.id] %}<form method="post" action="{{ url_for('download_case_file', file_id=f.id) }}" class="case-file-download"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><span>{{ f.filename }} <small class="muted">{{ (f.size / 1024)|round|int }} KB</small></span><label>File code<input type="password" name="secret_code" autocomplete="off" required></label><button class="ghost">Unlock & download</button></form>{% else %}<span class="muted">No files uploaded.</span>{% endfor %}</div>
+{% if session.role in ['client', 'associate'] %}<p class="security-caption">Set a code you choose for this file, then give it privately to the judge or other approved reviewer.</p><form method="post" action="{{ url_for('upload_case_file', cid=c.id) }}" enctype="multipart/form-data" class="case-file-upload"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label>Case file (PDF, DOCX, TXT or image)<input type="file" name="file" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.tif,.tiff" required></label><label>Set file code (8+ characters)<input type="password" name="secret_code" minlength="8" maxlength="128" autocomplete="new-password" required></label><label>Confirm file code<input type="password" name="confirm_secret_code" minlength="8" maxlength="128" autocomplete="new-password" required></label><button>Encrypt and upload case file</button></form>{% endif %}
+</article>
 {% else %}<p class="muted">No cases yet. Submit one above to get a judge's ruling.</p>{% endfor %}</section></div>
 <script>
 const log=document.getElementById('log'),q=document.getElementById('q'),csrf=document.querySelector('meta[name="csrf-token"]').content;

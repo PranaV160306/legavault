@@ -1,4 +1,4 @@
-import os, json, sqlite3, urllib.request, io, uuid, time, base64, hashlib, secrets
+import os, json, sqlite3, urllib.request, io, uuid, time, base64, hashlib, hmac, secrets
 from datetime import datetime, timedelta
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import ocr_nlp, rag, predict as pred, shutil, importlib.util
@@ -144,14 +144,34 @@ def init():
         CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, name TEXT, email TEXT UNIQUE, password TEXT, role TEXT);
         CREATE TABLE IF NOT EXISTS cases(id INTEGER PRIMARY KEY, user_id INTEGER, title TEXT, description TEXT,
             status TEXT DEFAULT 'Pending', ruling TEXT, judge_id INTEGER, created TEXT DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS case_files(id TEXT PRIMARY KEY, case_id INTEGER NOT NULL, owner_id INTEGER NOT NULL,
+            filename TEXT NOT NULL, size INTEGER NOT NULL, sha256 TEXT NOT NULL, code_hash TEXT,
+            created TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(case_id) REFERENCES cases(id), FOREIGN KEY(owner_id) REFERENCES users(id));
+        CREATE TABLE IF NOT EXISTS case_file_code_throttle(ip TEXT PRIMARY KEY, failures INTEGER NOT NULL,
+            window_start REAL NOT NULL, blocked_until REAL NOT NULL);
         CREATE TABLE IF NOT EXISTS docs(id TEXT PRIMARY KEY, owner_id INTEGER, filename TEXT, size INTEGER, sha256 TEXT, created TEXT DEFAULT CURRENT_TIMESTAMP);
-        CREATE TABLE IF NOT EXISTS access(doc_id TEXT, user_id INTEGER, granted_by INTEGER, UNIQUE(doc_id,user_id));
+        CREATE TABLE IF NOT EXISTS access(doc_id TEXT, user_id INTEGER, granted_by INTEGER, code_hash TEXT, share_id TEXT,
+            manual_code INTEGER NOT NULL DEFAULT 0, UNIQUE(doc_id,user_id));
+        CREATE TABLE IF NOT EXISTS share_code_history(code_hash TEXT PRIMARY KEY, created TEXT DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS share_code_throttle(ip TEXT PRIMARY KEY, failures INTEGER NOT NULL,
+            window_start REAL NOT NULL, blocked_until REAL NOT NULL);
         CREATE TABLE IF NOT EXISTS auth_throttle(ip TEXT PRIMARY KEY, failures INTEGER, window_start REAL, blocked_until REAL);
         CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY, user_id INTEGER, email TEXT, action TEXT, doc_id TEXT, detail TEXT, ip TEXT, created TEXT, prev_hash TEXT, hash TEXT);
         CREATE TABLE IF NOT EXISTS chats(id INTEGER PRIMARY KEY, user_id INTEGER, q TEXT, a TEXT, created TEXT DEFAULT CURRENT_TIMESTAMP);
         CREATE INDEX IF NOT EXISTS idx_audit_user_id ON audit(user_id, id);
         CREATE INDEX IF NOT EXISTS idx_docs_owner ON docs(owner_id, created);
         CREATE INDEX IF NOT EXISTS idx_access_user ON access(user_id, doc_id);""")
+        access_columns = {row[1] for row in c.execute("PRAGMA table_info(access)").fetchall()}
+        if "code_hash" not in access_columns:
+            c.execute("ALTER TABLE access ADD COLUMN code_hash TEXT")
+        if "share_id" not in access_columns:
+            c.execute("ALTER TABLE access ADD COLUMN share_id TEXT")
+        if "manual_code" not in access_columns:
+            c.execute("ALTER TABLE access ADD COLUMN manual_code INTEGER NOT NULL DEFAULT 0")
+        case_file_columns = {row[1] for row in c.execute("PRAGMA table_info(case_files)").fetchall()}
+        if "code_hash" not in case_file_columns:
+            c.execute("ALTER TABLE case_files ADD COLUMN code_hash TEXT")
     os.chmod(DB, 0o600)
 
 def login_required(*roles):
@@ -246,7 +266,7 @@ def logout():
 def dashboard():
     cases = db().execute("SELECT * FROM cases WHERE user_id=? ORDER BY id DESC", (session["uid"],)).fetchall()
     chats = db().execute("SELECT * FROM chats WHERE user_id=? ORDER BY id DESC LIMIT 5", (session["uid"],)).fetchall()
-    return render_template("dashboard.html", cases=cases, chats=chats, ai_enabled=bool(API_KEY))
+    return render_template("dashboard.html", cases=cases, files_by_case=case_files_by_case(cases), chats=chats, ai_enabled=bool(API_KEY))
 
 @app.route("/ask", methods=["POST"])
 @login_required("client", "lawyer", "associate", "judge")
@@ -276,7 +296,8 @@ def new_case():
 @login_required("judge")
 def judge():
     cases = db().execute("SELECT c.*, u.name AS client FROM cases c JOIN users u ON u.id=c.user_id ORDER BY (c.status='Pending') DESC, c.id DESC").fetchall()
-    return render_template("judge.html", cases=cases, pending=sum(1 for c in cases if c["status"] == "Pending"))
+    files_by_case = case_files_by_case(cases)
+    return render_template("judge.html", cases=cases, files_by_case=files_by_case, pending=sum(1 for c in cases if c["status"] == "Pending"))
 
 @app.route("/judge/<int:cid>", methods=["POST"])
 @login_required("judge")
@@ -313,7 +334,173 @@ SHARE_TO = {"client": {"lawyer"}, "lawyer": {"client", "associate"},
 VAULT = os.path.join(os.path.dirname(__file__), "vault"); os.makedirs(VAULT, mode=0o700, exist_ok=True); os.chmod(VAULT, 0o700)
 DOC_ROLES = ("client", "lawyer", "associate", "judge")
 
+CASE_UPLOAD_ROLES = {"client", "associate", "judge"}
+CASE_FILE_EXTENSIONS = {"pdf", "doc", "docx", "txt", "png", "jpg", "jpeg", "tif", "tiff"}
+
+def hash_unlock_code(code):
+    return hmac.new(str(app.secret_key).encode("utf-8"), code.encode("utf-8"), hashlib.sha256).hexdigest()
+
+def case_files_by_case(cases):
+    if not cases:
+        return {}
+    ids = [case["id"] for case in cases]
+    marks = ",".join("?" for _ in ids)
+    rows = db().execute(
+        f"SELECT * FROM case_files WHERE case_id IN ({marks}) ORDER BY created DESC, id DESC", ids
+    ).fetchall()
+    grouped = {case_id: [] for case_id in ids}
+    for row in rows:
+        grouped[row["case_id"]].append(row)
+    return grouped
+
+def record_case_file_code_failure():
+    """Throttle incorrect case-file codes by client IP."""
+    ip = request.remote_addr or "unknown"
+    now = time.time()
+    row = db().execute(
+        "SELECT failures, window_start, blocked_until FROM case_file_code_throttle WHERE ip=?", (ip,)
+    ).fetchone()
+    if row and now < row["blocked_until"]:
+        audit("CASE_FILE_CODE_BLOCKED", detail="case-file code rate limit")
+        return False
+    if row and now - row["window_start"] < 900 and row["failures"] >= 5:
+        db().execute("UPDATE case_file_code_throttle SET blocked_until=? WHERE ip=?", (row["window_start"] + 900, ip))
+        db().commit()
+        audit("CASE_FILE_CODE_BLOCKED", detail="case-file code rate limit")
+        return False
+
+    if not row or now - row["window_start"] >= 900:
+        db().execute(
+            "INSERT OR REPLACE INTO case_file_code_throttle(ip,failures,window_start,blocked_until) VALUES(?,?,?,0)",
+            (ip, 1, now),
+        )
+    else:
+        db().execute("UPDATE case_file_code_throttle SET failures=failures+1 WHERE ip=?", (ip,))
+    db().commit()
+    audit("CASE_FILE_CODE_REJECTED", detail="incorrect case-file code")
+    return True
+
+def record_share_code_failure():
+    ip = request.remote_addr or "unknown"
+    now = time.time()
+    row = db().execute("SELECT failures,window_start,blocked_until FROM share_code_throttle WHERE ip=?", (ip,)).fetchone()
+    if row and now < row["blocked_until"]:
+        audit("SHARE_CODE_BLOCKED", detail="share-code rate limit")
+        return False
+    blocked = bool(row and now - row["window_start"] < 900 and row["failures"] >= 4)
+    if not row or now - row["window_start"] >= 900:
+        db().execute("INSERT OR REPLACE INTO share_code_throttle(ip,failures,window_start,blocked_until) VALUES(?,?,?,0)",
+                     (ip, 1, now))
+    else:
+        db().execute("UPDATE share_code_throttle SET failures=failures+1 WHERE ip=?", (ip,))
+        if blocked:
+            db().execute("UPDATE share_code_throttle SET blocked_until=? WHERE ip=?", (row["window_start"] + 900, ip))
+    db().commit()
+    audit("SHARE_CODE_BLOCKED" if blocked else "SHARE_CODE_REJECTED", detail="share-code rate limit" if blocked else "incorrect recipient code")
+    return not blocked
+
 def can(perm): return perm in PERMS.get(session.get("role"), ())
+
+@app.route("/cases/<int:cid>/files", methods=["POST"])
+@login_required(*DOC_ROLES)
+def upload_case_file(cid):
+    if session.get("role") not in CASE_UPLOAD_ROLES:
+        audit("CASE_FILE_UPLOAD_DENIED", detail="role not allowed")
+        flash("Only clients, associates and judges can upload case files.")
+        return redirect(home_url())
+
+    if session["role"] == "judge":
+        case = db().execute("SELECT * FROM cases WHERE id=?", (cid,)).fetchone()
+    else:
+        case = db().execute("SELECT * FROM cases WHERE id=? AND user_id=?", (cid, session["uid"])).fetchone()
+    if not case:
+        audit("CASE_FILE_UPLOAD_DENIED", detail=f"case {cid} not accessible")
+        abort(404)
+
+    secret_code = request.form.get("secret_code", "").strip()
+    confirm_code = request.form.get("confirm_secret_code", "").strip()
+    if len(secret_code) < 8 or len(secret_code) > 128:
+        flash("Set a case-file code between 8 and 128 characters.")
+        return redirect(home_url())
+    if not secrets.compare_digest(secret_code, confirm_code):
+        flash("The case-file code and confirmation do not match. Please try again.")
+        return redirect(home_url())
+
+    file = request.files.get("file")
+    if not file or not file.filename:
+        flash("Choose a case file to upload.")
+        return redirect(home_url())
+    extension = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    if extension not in CASE_FILE_EXTENSIONS:
+        flash("Upload a PDF, DOC, DOCX, TXT, PNG, JPG or TIFF case file.")
+        return redirect(home_url())
+
+    data = file.read()
+    if not data:
+        flash("The selected case file is empty.")
+        return redirect(home_url())
+
+    from werkzeug.utils import secure_filename
+    file_id = uuid.uuid4().hex
+    filename = secure_filename(file.filename) or "case-file"
+    digest = hashlib.sha256(data).hexdigest()
+    path = os.path.join(VAULT, file_id + ".case")
+    try:
+        with open(path, "xb") as encrypted_file:
+            encrypted_file.write(enc(data, "case-file:" + file_id))
+        os.chmod(path, 0o600)
+        db().execute(
+            "INSERT INTO case_files(id,case_id,owner_id,filename,size,sha256,code_hash) VALUES(?,?,?,?,?,?,?)",
+            (file_id, cid, session["uid"], filename, len(data), digest,
+             hash_unlock_code(secret_code)),
+        )
+        db().commit()
+    except Exception:
+        db().rollback()
+        try:
+            os.remove(path)
+        except OSError:
+            app.logger.exception("Could not clean up an incomplete case-file upload")
+        app.logger.exception("Case-file upload failed")
+        flash("The case file could not be stored. Please try again.")
+        return redirect(home_url())
+
+    audit("CASE_FILE_UPLOAD", file_id, f"case={cid}, {filename}, {len(data)} bytes, sha256={digest[:16]}")
+    flash("Case file encrypted and uploaded successfully.")
+    return redirect(home_url())
+
+@app.route("/cases/files/<file_id>/download", methods=["POST"])
+@login_required(*DOC_ROLES)
+def download_case_file(file_id):
+    record = db().execute(
+        "SELECT cf.*, c.user_id AS case_owner FROM case_files cf JOIN cases c ON c.id=cf.case_id WHERE cf.id=?",
+        (file_id,),
+    ).fetchone()
+    if not record or (session.get("role") != "judge" and record["case_owner"] != session["uid"]):
+        audit("CASE_FILE_ACCESS_DENIED", file_id)
+        abort(404)
+    if not record["code_hash"]:
+        flash("This older case file has no unlock code. Upload it again and set a code.")
+        return redirect(home_url())
+    if not secrets.compare_digest(
+        hash_unlock_code(request.form.get("secret_code", "").strip()),
+        record["code_hash"],
+    ):
+        if record_case_file_code_failure():
+            flash("The case-file code is incorrect.")
+        else:
+            flash("Too many incorrect codes. Try again in 15 minutes.")
+        return redirect(home_url())
+    db().execute("DELETE FROM case_file_code_throttle WHERE ip=?", (request.remote_addr or "unknown",))
+    db().commit()
+    try:
+        with open(os.path.join(VAULT, file_id + ".case"), "rb") as encrypted_file:
+            data = dec(encrypted_file.read(), "case-file:" + file_id)
+    except (OSError, ValueError):
+        audit("CASE_FILE_INTEGRITY_FAILURE", file_id)
+        abort(404)
+    audit("CASE_FILE_DOWNLOAD", file_id, f"case={record['case_id']}")
+    return send_file(io.BytesIO(data), as_attachment=True, download_name=record["filename"])
 
 def master_key():  # 32 bytes = AES-256. Use DOC_KEY (urlsafe base64) in production, else a local key file is created.
     if os.environ.get("DOC_KEY"):
@@ -348,7 +535,9 @@ def vault():
         FROM docs d JOIN users u ON u.id=d.owner_id WHERE d.owner_id=? OR d.id IN (SELECT doc_id FROM access WHERE user_id=?)
         ORDER BY d.created DESC""", (session["uid"], session["uid"])).fetchall()
     shares_by_doc = {d["id"]: db().execute("SELECT u.id, u.name, u.email FROM access a JOIN users u ON u.id=a.user_id WHERE a.doc_id=? ORDER BY u.name", (d["id"],)).fetchall() for d in docs}
-    return render_template("vault.html", docs=docs, shares=can("share"), shares_by_doc=shares_by_doc)
+    unlocked_by_doc = {d["id"]: d["owner_id"] == session["uid"] or share_code_is_verified(d["id"]) for d in docs}
+    return render_template("vault.html", docs=docs, shares=can("share"), shares_by_doc=shares_by_doc,
+                           unlocked_by_doc=unlocked_by_doc)
 
 @app.route("/vault/upload", methods=["POST"])
 @login_required(*DOC_ROLES)
@@ -394,8 +583,81 @@ def share(did):
     if not d or not can("share"): audit("SHARE_DENIED", did); flash("You cannot share this document."); return redirect(url_for("vault"))
     if not t or t["role"] not in SHARE_TO.get(session["role"], ()):
         audit("SHARE_DENIED", did, "recipient not allowed"); flash(f"A {session['role']} can only share with: {', '.join(sorted(SHARE_TO[session['role']]))} accounts."); return redirect(url_for("vault"))
-    db().execute("INSERT OR IGNORE INTO access(doc_id,user_id,granted_by) VALUES(?,?,?)", (did, t["id"], session["uid"])); db().commit()
-    audit("SHARE", did, f"to {t['email']} ({t['role']})"); flash(f"Shared with {t['name']}."); return redirect(url_for("vault"))
+    code = request.form.get("share_code", "").strip()
+    confirm_code = request.form.get("confirm_share_code", "").strip()
+    if len(code) < 8 or len(code) > 128:
+        flash("Set a recipient code between 8 and 128 characters.")
+        return redirect(url_for("vault"))
+    if not secrets.compare_digest(code, confirm_code):
+        flash("The recipient code and confirmation do not match.")
+        return redirect(url_for("vault"))
+    code_digest = hash_unlock_code(code)
+    used_code = db().execute(
+        "SELECT 1 FROM share_code_history WHERE code_hash=? UNION ALL SELECT 1 FROM access WHERE code_hash=? LIMIT 1",
+        (code_digest, code_digest),
+    ).fetchone()
+    if used_code:
+        flash("Choose a new code that has not been used for another share.")
+        return redirect(url_for("vault"))
+    share_id = secrets.token_urlsafe(18)
+    db().execute("INSERT INTO share_code_history(code_hash) VALUES(?)", (code_digest,))
+    db().execute("""INSERT INTO access(doc_id,user_id,granted_by,code_hash,share_id,manual_code) VALUES(?,?,?,?,?,1)
+        ON CONFLICT(doc_id,user_id) DO UPDATE SET granted_by=excluded.granted_by,
+        code_hash=excluded.code_hash, share_id=excluded.share_id, manual_code=1""",
+                 (did, t["id"], session["uid"], code_digest, share_id))
+    db().commit()
+    audit("SHARE", did, f"to {t['email']} ({t['role']})")
+    flash(f"Shared with {t['name']}. Give them the code you set, using a private channel.")
+    return redirect(url_for("vault"))
+
+@app.route("/vault/unlock/<did>", methods=["POST"])
+@login_required(*DOC_ROLES)
+def unlock_shared_doc(did):
+    doc = my_doc(did)
+    access = db().execute("SELECT code_hash, share_id, manual_code FROM access WHERE doc_id=? AND user_id=?",
+                          (did, session["uid"])).fetchone()
+    if not doc or doc["owner_id"] == session["uid"] or not access:
+        audit("SHARE_CODE_DENIED", did, "no active share")
+        abort(404)
+    supplied = request.form.get("share_code", "").strip()
+    supplied_hash = hash_unlock_code(supplied)
+    ip = request.remote_addr or "unknown"
+    throttle = db().execute("SELECT failures,window_start,blocked_until FROM share_code_throttle WHERE ip=?", (ip,)).fetchone()
+    if throttle and (time.time() < throttle["blocked_until"] or
+                     (throttle["failures"] >= 5 and time.time() - throttle["window_start"] < 900)):
+        audit("SHARE_CODE_BLOCKED", did, "share-code rate limit")
+        flash("Too many incorrect codes. Try again in 15 minutes.")
+        return redirect(url_for("vault"))
+    if not access["manual_code"]:
+        flash("The owner must share this file again and set a new code.")
+        return redirect(url_for("vault"))
+    if not access["code_hash"] or not secrets.compare_digest(supplied_hash, access["code_hash"]):
+        allowed = record_share_code_failure()
+        flash("The share code is incorrect. Try again." if allowed else "Too many incorrect codes. Try again in 15 minutes.")
+        return redirect(url_for("vault"))
+
+    verified = session.get("share_code_verified", {})
+    if not isinstance(verified, dict):
+        verified = {}
+    now = time.time()
+    verified = {key: value for key, value in verified.items()
+                if isinstance(value, dict) and now - value.get("verified_at", 0) < 1800}
+    verified[did] = {"share_id": access["share_id"], "verified_at": now}
+    session["share_code_verified"] = verified
+    db().execute("DELETE FROM share_code_throttle WHERE ip=?", (ip,))
+    db().commit()
+    audit("SHARE_CODE_ACCEPTED", did)
+    flash("Shared file unlocked for 30 minutes.")
+    return redirect(url_for("vault"))
+
+def share_code_is_verified(did):
+    access = db().execute("SELECT share_id, manual_code FROM access WHERE doc_id=? AND user_id=?",
+                          (did, session["uid"])).fetchone()
+    verified_map = session.get("share_code_verified", {})
+    verified = verified_map.get(did) if isinstance(verified_map, dict) else None
+    return bool(access and access["manual_code"] and access["share_id"] and isinstance(verified, dict) and
+                verified.get("share_id") == access["share_id"] and
+                time.time() - verified.get("verified_at", 0) < 1800)
 
 @app.route("/vault/share/<did>/<int:recipient_id>/revoke", methods=["POST"])
 @login_required(*DOC_ROLES)
@@ -417,6 +679,9 @@ def revoke_share(did, recipient_id):
 def download(did):
     d = my_doc(did)
     if not d: audit("ACCESS_DENIED", did); flash("You do not have access to that document."); return redirect(url_for("vault"))
+    if d["owner_id"] != session["uid"] and not share_code_is_verified(did):
+        flash("Enter the current share code to unlock this document before downloading it.")
+        return redirect(url_for("vault"))
     blob = open(os.path.join(VAULT, did + ".enc"), "rb").read()
     try: data = AESGCM(master_key()).decrypt(blob[:12], blob[12:], did.encode())
     except Exception:
@@ -451,6 +716,9 @@ def ctx_prompt(q):
 def analysis(did):
     d = my_doc(did)
     if not d: audit("ACCESS_DENIED", did); flash("You do not have access to that document."); return redirect(url_for("vault"))
+    if d["owner_id"] != session["uid"] and not share_code_is_verified(did):
+        flash("Enter the current share code to unlock this document before viewing its analysis.")
+        return redirect(url_for("vault"))
     p = os.path.join(VAULT, did + ".ana")
     if not os.path.exists(p): flash("No analysis was stored for this document."); return redirect(url_for("vault"))
     try: ana = json.loads(dec(open(p, "rb").read(), did + ".ana"))
@@ -496,7 +764,7 @@ def status():
              ("Encryption at rest", "AES-256-GCM with a per-file nonce"),
              ("Login security", "Password login with failed-attempt throttling"),
              ("Transport security", "HTTPS required outside localhost"),
-             ("Role access", "Client, lawyer and associate sharing rules; judge is read-only")]
+             ("Role access", "Case owners manage their cases; judges review cases and their files")]
     return render_template("status.html", items=items)
 
 if __name__ == "__main__":
